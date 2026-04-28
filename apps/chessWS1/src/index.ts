@@ -1,61 +1,86 @@
 import {WebSocketServer , WebSocket} from "ws" ;
 import { Chess } from "chess.js";
 import {randomUUID} from "crypto" ;
+import { createRedisClient } from "@repo/redis";
 
 const wss = new WebSocketServer({port : 8080}) ;
-let players : WebSocket[] = [] ;
-let games : {
-    gameId : string ,
-    game : Chess ,
-    wSocket : WebSocket ,
-    bSocket : WebSocket ,
-}[] = [] ;
+const socketMap = new Map<string , WebSocket>() ;
+const gameMap = new Map<string , Chess>() ;
+
+
+const queueClient = createRedisClient() ;
+const subscriber = createRedisClient() ;
+const publisher = createRedisClient() ;
+
+async function main () {
+    await queueClient.connect() ;
+    await subscriber.connect() ;
+    await publisher.connect() ;
+}
+
+main () ;
+
+const gameInit = subscriber.subscribe("gameInit" , (data) => {
+    const msg = JSON.parse(data) ;
+    const {players , gameId} = msg ;
+
+    const wsWhite = socketMap.get(players.white) ;
+    const wsBlack = socketMap.get(players.black) ;
+
+    if (!wsWhite && !wsBlack){
+        return ;
+    }
+
+    const game = new Chess() ;
+    gameMap.set(gameId , game) ;
+
+    async function setGame () {
+        await publisher.hSet(`game:${gameId}` ,{
+            white : players.white , 
+            black : players.black ,
+            fen : game.fen()
+        }) ;
+    }
+    setGame() ;
+
+    wsWhite?.send(JSON.stringify({
+        type : "room_added" ,
+        gameId ,
+        your : "w" ,
+        fen : game.fen() 
+    }))
+    wsBlack?.send(JSON.stringify({
+        type : "room_added" ,
+        gameId ,
+        your : "b" ,
+        fen : game.fen() 
+    }))
+});
+
 
 wss.on("connection" , (ws) => {
     ws.on("error" , (err) => {
         console.error(err) ;
     })
 
-    ws.on("message" , (data) => {
+    ws.on("message" , async (data) => {
         const msg = JSON.parse(data.toString()) ;
         
         if (msg.type == "add_room"){
-            if (players.length == 0){
-                players.push(ws) ;
-                ws.send(JSON.stringify({
-                    type : "add_room" ,
-                    msg : "Waiting for another player"
-                }))
-            }else{
-                const player1 = players.pop() ;
-                if (player1 == undefined){
-                    ws.send(JSON.stringify({
-                        type : "add_room" ,
-                        msg : "Unable to find player"
-                    }))
-                    return ;
-                }
-                const game = new Chess() ;
-                const gameId = randomUUID() ;
-                games.push({
-                    gameId : gameId ,
-                    game : game ,
-                    wSocket : player1 ,
-                    bSocket : ws ,
-                })
-                player1.send(JSON.stringify({
-                    type : "room_added" ,
-                    gameId : gameId ,
-                    fen : game.fen() ,
-                    your : "white" ,
-                }))
-                ws.send(JSON.stringify({
-                    type : "room_added" ,
-                    gameId : gameId ,
-                    fen : game.fen() ,
-                    your : "black"
-                }))
-            }
+            const playerId = randomUUID() ;
+            socketMap.set(playerId , ws) ;
+
+            const matchMaking = await queueClient.lPush("matchMaking" , playerId) ;
+
+        }
+
+        if (msg.type == "room_added"){
+            ws.send(JSON.stringify({
+                type : "room_added" ,
+                gameId : msg.gameId ,
+                your : msg.your ,
+                fen : msg.fen 
+            }))
         }
 
         if (msg.type == "move"){
