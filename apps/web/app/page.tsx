@@ -1,13 +1,14 @@
 "use client"
-import randomUUID from "crypto" ;
 import { useEffect, useRef, useState } from "react";
 import { Chessboard, PieceDropHandlerArgs } from "react-chessboard";
 import { useSocket } from "./hooks/useSocket";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
   const [fen, setFen] = useState();
   const socket = useSocket() ;
   const [gameId , setGameId] = useState(null) ;
+  const router = useRouter() ;
 
   useEffect(() => {
     if (!socket) return ;
@@ -59,11 +60,9 @@ export default function Home() {
   }
 
   return (
-    <div className="flex">
-      <div>CHESS</div>
-      <div>
-        <Chessboard  options={chessBoardOptions} />
-      </div>
+    <div className="bg-green-400 border-2">
+      hello
+      <div className=" bg-amber-950">Hii</div>
     </div>
   );
 }

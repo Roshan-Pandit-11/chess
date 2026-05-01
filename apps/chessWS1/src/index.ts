@@ -5,22 +5,19 @@ import { createRedisClient } from "@repo/redis";
 
 const wss = new WebSocketServer({port : 8080}) ;
 const socketMap = new Map<string , WebSocket>() ;
-const gameMap = new Map<string , Chess>() ;
-
 
 const queueClient = createRedisClient() ;
 const subscriber = createRedisClient() ;
 const publisher = createRedisClient() ;
+const redis = createRedisClient() ;
 
 async function main () {
     await queueClient.connect() ;
     await subscriber.connect() ;
     await publisher.connect() ;
-}
+    await redis.connect() ;
 
-main () ;
-
-const gameInit = subscriber.subscribe("gameInit" , (data) => {
+    const gameInit = await subscriber.subscribe("gameInit" , (data) => {
     const msg = JSON.parse(data) ;
     const {players , gameId} = msg ;
 
@@ -32,10 +29,9 @@ const gameInit = subscriber.subscribe("gameInit" , (data) => {
     }
 
     const game = new Chess() ;
-    gameMap.set(gameId , game) ;
 
     async function setGame () {
-        await publisher.hSet(`game:${gameId}` ,{
+        await redis.hSet(`game:${gameId}` ,{
             white : players.white , 
             black : players.black ,
             fen : game.fen()
@@ -46,17 +42,61 @@ const gameInit = subscriber.subscribe("gameInit" , (data) => {
     wsWhite?.send(JSON.stringify({
         type : "room_added" ,
         gameId ,
-        your : "w" ,
+        your : players.white ,
         fen : game.fen() 
     }))
     wsBlack?.send(JSON.stringify({
         type : "room_added" ,
         gameId ,
-        your : "b" ,
+        your : players.black ,
         fen : game.fen() 
     }))
-});
+    });
 
+    const gameMove = await subscriber.subscribe("gameMove" , (data) => {
+        const moveData = JSON.parse(data) ;
+        const {gameId , fen , status} = moveData ;
+        if (!moveData.fen) return ;
+
+        async function getGame() {
+            const game = await redis.hGetAll(`game:${gameId}`) ;
+            if (!game.fen){
+                console.log("Game Not Found") ;
+                return ;
+            }
+            const {white , black} = game ;
+            if (!white || !black) {
+                console.log("Player Not Found") ;
+                return ;
+            }
+
+            const wsWhite = socketMap.get(white) ; 
+            const wsBlack = socketMap.get(black) ; 
+
+            if (!wsWhite && !wsBlack) {
+                console.log("WebSocket Not Found") ;
+                return ;
+            }
+
+            if (wsWhite?.readyState){
+                wsWhite.send(JSON.stringify({
+                    type : "moveDone" ,
+                    fen : fen ,
+                    status : status ,
+                }))
+            }
+            if (wsBlack?.readyState){
+                wsBlack.send(JSON.stringify({
+                    type : "moveDone" ,
+                    fen : fen ,
+                    status : status ,
+                }))
+            }
+        }
+        getGame() ;
+    })
+}
+main() ;
 
 wss.on("connection" , (ws) => {
     ws.on("error" , (err) => {
@@ -69,9 +109,7 @@ wss.on("connection" , (ws) => {
         if (msg.type == "add_room"){
             const playerId = randomUUID() ;
             socketMap.set(playerId , ws) ;
-
             const matchMaking = await queueClient.lPush("matchMaking" , playerId) ;
-
         }
 
         if (msg.type == "room_added"){
@@ -85,87 +123,21 @@ wss.on("connection" , (ws) => {
 
         if (msg.type == "move"){
            const gameId = msg.gameId ;
-           const game = games.find((game) => game.gameId == gameId) ;
-           if (game == undefined){
-                ws.send(JSON.stringify({
-                    type : "no_room" ,
-                    msg : "No Room Found"
-                }))
-            return ;
-           }
-           if (ws !== game.wSocket && ws !== game.bSocket) {
-            ws.send(JSON.stringify({
-                type: "error",
-                msg: "You are not part of this game"
-            }));
-                return;
-            }
-
-           const isWhite = ws === game.wSocket ;
-           if ((game.game.turn() === "w" && !isWhite) || (game.game.turn() === "b" && isWhite)) {
-                ws.send(JSON.stringify({
-                    type : "turn" ,
-                    msg : "Not Your Turn"
-                }))
-            return ;
-           }
-
-           const sourceSquare = msg.sourceSquare ;
-           const targetSquare = msg.targetSquare ;
-
-            if (!targetSquare) {
-                console.log("No target") ;
-                ws.send(JSON.stringify({
-                    type : "move" ,
-                    msg : "Invalid Target Square"
-                }))
-                return ;
-            }
-
-            try {
-            const move = game?.game.move({
-                from: sourceSquare,
-                to: targetSquare,
-                promotion: "q"
-            });
-
-            if (move == null || move == undefined) {
-                console.log("Invalid move");
-                ws.send(JSON.stringify({
-                    type : "move" ,
-                    msg : "Invalid Move"
-                }))
-                return ; 
-            }
-            const isCheckMate = game.game.isCheckmate()
-            const isDraw = game.game.isDraw()
-            const isGameOver = isCheckMate || isDraw
-
-            const isCheck = !isGameOver && game.game.isCheck()
-            const fen = game?.game.fen() ;
-            if (game.bSocket.readyState === WebSocket.OPEN){
-                game.bSocket.send(JSON.stringify({
-                type : "move" ,
-                fen : fen ,
-                isCheck , isCheckMate , isDraw , isGameOver 
+           const makeMove = await publisher.publish("makeMove" , JSON.stringify({
+                gameId : gameId ,
+                from : msg.from ,
+                to : msg.to ,
+                your : msg.your
             }))
-            }
-            if (game.wSocket.readyState === WebSocket.OPEN){
-                game.wSocket.send(JSON.stringify({
-                type : "move" ,
-                fen : fen , 
-                isCheck , isCheckMate , isDraw , isGameOver 
-            }))
-            }
-            if (isGameOver){
-                games = games.filter((game) => game.gameId !== gameId) ;
-            }
-            return ;
-            } catch (error) {
-                console.log("Not You Move") ;
-                return ;
-            }
         }
+
+        if (msg.type == "moveDone"){
+           const makeMove = await publisher.publish("makeMove" , JSON.stringify({
+                fen : msg.fen ,
+                status : msg.status 
+            }))
+        }
+
     })
 
 })
