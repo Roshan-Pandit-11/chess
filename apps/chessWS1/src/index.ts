@@ -43,12 +43,16 @@ async function main () {
         type : "room_added" ,
         gameId ,
         your : players.white ,
+        white : players.white , 
+        black : players.black ,
         fen : game.fen() 
     }))
     wsBlack?.send(JSON.stringify({
         type : "room_added" ,
         gameId ,
         your : players.black ,
+        white : players.white , 
+        black : players.black ,
         fen : game.fen() 
     }))
     });
@@ -109,15 +113,44 @@ wss.on("connection" , (ws) => {
         if (msg.type == "add_room"){
             const playerId = randomUUID() ;
             socketMap.set(playerId , ws) ;
+            (ws as any).playerId = playerId ;
             const matchMaking = await queueClient.lPush("matchMaking" , playerId) ;
+            await redis.set(`player:${playerId}` , "waiting") ;
+            ws.send(JSON.stringify({
+                type : "room_adding" ,
+                msg : "please Wait"
+            }))
+        }
+
+        if (msg.type == "remove_room"){
+            const playerId = (ws as any).playerId ;
+            await redis.set(`player:${playerId}` , "cancelled") ;
+            await queueClient.lRem("matchMaking" , 0, playerId) ;
+            ws.send(JSON.stringify({
+                type : "removed" ,
+                msg : "removed from matchMaking"
+            }))
         }
 
         if (msg.type == "room_added"){
             ws.send(JSON.stringify({
                 type : "room_added" ,
                 gameId : msg.gameId ,
-                your : msg.your ,
+                your : msg.black ,
+                white : msg.white , 
+                black : msg.black ,
                 fen : msg.fen 
+            }))
+        }
+
+        if (msg.type == "game_state"){
+            const playerId = (ws as any).playerId ;
+            const gameState = await redis.hGetAll(`game:${msg.gameId}`) ;
+            ws.send(JSON.stringify({
+                type : "game_state" ,
+                gameId : msg.gameId ,
+                gameState : gameState ,
+                your : playerId 
             }))
         }
 
@@ -138,6 +171,14 @@ wss.on("connection" , (ws) => {
             }))
         }
 
+    })
+
+    ws.on("close" , async () => {
+        const playerId = (ws as any).playerId ;
+        if (playerId) {
+            await queueClient.lRem("matchMaking" , 0 , playerId) ;
+            socketMap.delete(playerId) ;
+        }
     })
 
 })

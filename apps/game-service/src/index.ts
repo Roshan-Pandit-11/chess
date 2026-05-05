@@ -24,6 +24,9 @@ async function main () {
             const {white , black , fen} = gameData ;
 
             if (your !== white && your !== black){
+                console.log(your) ;
+                console.log(white) ;
+                console.log(black) ;
                 console.log("Invalid players");
                 return ;
             }
@@ -54,7 +57,7 @@ async function main () {
                     fen : game.fen() ,
                 })
 
-                let status ;
+                let status = "normal";
                 if (game.isCheck()) status = "check" ;
                 if (game.isDraw()) status = "draw" ;
                 if (game.isCheckmate()) status = "checkMate" ;
