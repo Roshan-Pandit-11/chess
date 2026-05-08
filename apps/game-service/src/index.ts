@@ -24,9 +24,6 @@ async function main () {
             const {white , black , fen} = gameData ;
 
             if (your !== white && your !== black){
-                console.log(your) ;
-                console.log(white) ;
-                console.log(black) ;
                 console.log("Invalid players");
                 return ;
             }

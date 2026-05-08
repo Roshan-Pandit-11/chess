@@ -111,7 +111,7 @@ wss.on("connection" , (ws) => {
         const msg = JSON.parse(data.toString()) ;
         
         if (msg.type == "add_room"){
-            const playerId = randomUUID() ;
+            const playerId = msg.playerId ;
             socketMap.set(playerId , ws) ;
             (ws as any).playerId = playerId ;
             const matchMaking = await queueClient.lPush("matchMaking" , playerId) ;
@@ -144,7 +144,8 @@ wss.on("connection" , (ws) => {
         }
 
         if (msg.type == "game_state"){
-            const playerId = (ws as any).playerId ;
+            const playerId = msg.playerId ;
+            (ws as any).playerId = playerId ;
             const gameState = await redis.hGetAll(`game:${msg.gameId}`) ;
             ws.send(JSON.stringify({
                 type : "game_state" ,
@@ -164,11 +165,17 @@ wss.on("connection" , (ws) => {
             }))
         }
 
-        if (msg.type == "moveDone"){
-           const makeMove = await publisher.publish("makeMove" , JSON.stringify({
-                fen : msg.fen ,
-                status : msg.status 
-            }))
+        // if (msg.type == "moveDone"){
+        //    const makeMove = await publisher.publish("makeMove" , JSON.stringify({
+        //         fen : msg.fen ,
+        //         status : msg.status 
+        //     }))
+        // }
+
+        if (msg.type == "register_socket"){
+            const playerId = msg.playerId ;
+            socketMap.set(playerId , ws) ;
+            (ws as any).playerId = playerId ;
         }
 
     })

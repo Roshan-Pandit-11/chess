@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSession , signIn , signOut } from "next-auth/react";
 import { MatchMaking } from "./components/matchMaking";
 import { useRouter } from "next/navigation";
+import { randomUUID } from "crypto";
 
 export default function Landing() {
   const socket = useSocket() ;
@@ -12,7 +13,17 @@ export default function Landing() {
   const [isMatchMaking , setIsMatchMaking] = useState(false) ;
   const router = useRouter() ;
   const session = useSession() ;
+  const [playerId , setPlayerId] = useState<string | null>(null) ;
   console.log(session.data) ;
+
+  useEffect(() => {
+      let id = localStorage.getItem("playerId") ;
+    if (!playerId || playerId == null){
+      id = crypto.randomUUID();
+      localStorage.setItem("playerId" , id) ;
+    }
+    setPlayerId(id) ;
+  }, []) ;
 
   useEffect(() => {
     if (!socket) return ;
@@ -52,14 +63,17 @@ export default function Landing() {
       signIn() ;
       return ;
     }
+    if (!playerId) return ;
     socket?.send(JSON.stringify({
       type : "add_room" ,
+      playerId
     }))
   }
 
   function cancelMatchMaking () {
     socket?.send(JSON.stringify({
       type : "remove_room" ,
+      playerId
     }))
   }
 

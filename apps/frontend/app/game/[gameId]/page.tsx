@@ -1,6 +1,7 @@
 "use client"
 import { useSocket } from "@/app/hooks/useSocket";
 import { Chess } from "chess.js";
+import { randomUUID } from "crypto";
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Chessboard, PieceDropHandlerArgs } from "react-chessboard" ;
@@ -13,6 +14,18 @@ export default function ChessBoard () {
     const playerId = useRef(null) ;
     const chessGame = chessGameRef.current ;
     const [chessPosition , setChessPosition] = useState(chessGame.fen()) ;
+    const [orientation , setOrientation] = useState<"black" | "white">("white") ;
+    const [localplayerId , setLocalPlayerId] = useState<string | null>(null) ;
+    const gameStatus = useRef<"check"|"draw"|"checkMate"|"normal">("normal") ;
+
+    useEffect(() => {
+        let id = localStorage.getItem("playerId") ;
+        if (!playerId){
+            id = crypto.randomUUID();
+            localStorage.setItem("playerId" , id) ;
+        }
+        setLocalPlayerId(id) ;
+    }, []) ;
 
     useEffect(() => {
         if (!socket) return ;
@@ -29,9 +42,11 @@ export default function ChessBoard () {
                 if (msg.your === msg.gameState.white) {
                     console.log("White") ;
                     yourColor.current = "w";
+                    setOrientation("white");
                 } else if (msg.your === msg.gameState.black) {
                     console.log("Black")
                     yourColor.current = "b";
+                    setOrientation("black");
                 }
             }
 
@@ -48,13 +63,35 @@ export default function ChessBoard () {
     }, [socket]) ;
 
     useEffect(() => {
-        if (!socket) return ;
+        if (!socket || !localplayerId) return ;
 
         socket.send(JSON.stringify({
             type : "game_state" ,
             gameId : gameId ,
+            playerId : localplayerId
         }))
-    }, [socket]) ;
+
+    }, [socket , localplayerId]) ;
+
+    useEffect(() => {
+        if (!socket || !localplayerId) return ;
+
+        const registerSocket = () => {
+            socket.send(JSON.stringify({
+                type : "register_socket" ,
+                playerId : localplayerId
+            }))
+        }
+
+        if (socket.readyState === WebSocket.OPEN){
+            registerSocket() ;
+        }else{
+            socket.addEventListener("open" , registerSocket) ;
+            return () => {
+                socket.removeEventListener("open" , registerSocket) ;
+            }
+        }
+    }, [socket , localplayerId]) ;
 
     function onPieceDrop ({
         sourceSquare ,
@@ -101,7 +138,8 @@ export default function ChessBoard () {
     const chessBoardOptions = {
         position : chessPosition ,
         onPieceDrop ,
-        id : 'one-vs-one'
+        boardOrientation:orientation,
+        id : 'one-vs-one' ,
     }
     return (
         <div>
