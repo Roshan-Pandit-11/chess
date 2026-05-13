@@ -165,6 +165,31 @@ wss.on("connection" , (ws) => {
             }))
         }
 
+        if (msg.type == "player_data"){
+            const {playerId , gameId} = msg ;
+            const game = await redis.hGetAll(`game:${gameId}`) ;
+            if (!game) return ;
+            const wsWhite = socketMap.get(game.white as string) ;
+            const wsBlack = socketMap.get(game.black as string) ;
+            if (!wsWhite || !wsBlack) return ;
+            if (playerId == game.black){
+                wsWhite.send(JSON.stringify({
+                    type : "player_data" ,
+                    gameId ,
+                    name : msg.name ,
+                    img : msg.img 
+                }))
+            }else{
+                wsBlack.send(JSON.stringify({
+                    type : "player_data" ,
+                    gameId ,
+                    name : msg.name ,
+                    img : msg.img 
+                }))
+            }
+
+        }
+
         // if (msg.type == "moveDone"){
         //    const makeMove = await publisher.publish("makeMove" , JSON.stringify({
         //         fen : msg.fen ,
@@ -176,6 +201,55 @@ wss.on("connection" , (ws) => {
             const playerId = msg.playerId ;
             socketMap.set(playerId , ws) ;
             (ws as any).playerId = playerId ;
+        }
+
+        if (msg.type == "play_again"){
+            const playerId = msg.playerId ;
+            const gameId = msg.gameId ;
+
+            const game = await redis.hGetAll(`game:${gameId}`) ;
+            if (!game) return ;
+
+            const wsBlack = socketMap.get(`${game.black}`) ;
+            const wsWhite = socketMap.get(`${game.white}`) ;
+
+            if (!wsBlack || !wsWhite) {
+                ws.send(JSON.stringify({
+                    type : "Socket_dies"
+                }))
+                return ;
+            }
+
+            const checkOppWantToPlay = await redis.get(`${gameId}`) ;
+
+            if (!checkOppWantToPlay || checkOppWantToPlay == null){
+                
+                await redis.set(`${gameId}` , playerId) ;
+                if (playerId == game.black){
+                    wsWhite.send(JSON.stringify({
+                        type : "play_again" ,
+                    }))
+                    return ;
+                }else{
+                    wsBlack.send(JSON.stringify({
+                        type : "play_again" ,
+                    }))
+                    return ;
+                }
+            }
+            await redis.del(`${gameId}`) ;
+            const newGame = new Chess() ;
+            await redis.hSet(`game:${gameId}` , {
+                fen : newGame.fen() 
+            })
+            wsWhite.send(JSON.stringify({
+                type : "play_again_done" ,
+                fen : newGame.fen() 
+            }))
+            wsBlack.send(JSON.stringify({
+                type : "play_again_done" ,
+                fen : newGame.fen() 
+            }))
         }
 
     })
