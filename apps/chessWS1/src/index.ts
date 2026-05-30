@@ -190,13 +190,6 @@ wss.on("connection" , (ws) => {
 
         }
 
-        // if (msg.type == "moveDone"){
-        //    const makeMove = await publisher.publish("makeMove" , JSON.stringify({
-        //         fen : msg.fen ,
-        //         status : msg.status 
-        //     }))
-        // }
-
         if (msg.type == "register_socket"){
             const playerId = msg.playerId ;
             socketMap.set(playerId , ws) ;
@@ -249,6 +242,30 @@ wss.on("connection" , (ws) => {
             wsBlack.send(JSON.stringify({
                 type : "play_again_done" ,
                 fen : newGame.fen() 
+            }))
+        }
+
+        if (msg.type == "new_match"){
+            const {gameId , playerId} = msg ;
+            const game = await redis.hGetAll(`game:${gameId}`) ;
+            if (!game) return ;
+
+            const wsBlack = socketMap.get(`${game.black}`) ;
+            const wsWhite = socketMap.get(`${game.white}`) ;
+
+            // if (!wsBlack || !wsWhite) {
+            //     ws.send(JSON.stringify({
+            //         type : "Socket_dies"
+            //     }))
+            //     return ;
+            // }
+            await redis.del(`game:${gameId}`) ;
+            await redis.del(`${gameId}`) ;
+            wsWhite?.send(JSON.stringify({
+                type : "new_match" ,
+            }))
+            wsBlack?.send(JSON.stringify({
+                type : "new_match" ,
             }))
         }
 

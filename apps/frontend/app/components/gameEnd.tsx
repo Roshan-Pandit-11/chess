@@ -37,6 +37,10 @@ export default function GameEnd({
       if (msg.type == "play_again"){
         setOppWantToPlay(true) ;
       }
+      if (msg.type == "new_match"){
+        setOppRemoved(true) ;
+        console.log(oppRemoved) ;
+      }
     }
 
     socket.addEventListener("message" , handleMessage) ;
@@ -57,6 +61,20 @@ export default function GameEnd({
         playerId
     }))
   }
+
+   function newMatch () {
+    if (!gameId) return ;
+    if (!socket) {
+        alert("Try Again") ;
+        return ;
+    }
+    socket.send(JSON.stringify({
+        type : "new_match" ,
+        gameId ,
+        playerId
+    }))
+    router.push("/") ;
+   }
 
   return (
   <div className="min-h-screen flex items-center justify-center px-4 bg-transparent">
@@ -148,7 +166,11 @@ export default function GameEnd({
         ♟️ Opponent Wants To Play Again
         </div>}
           {/* Play Again */}
-          <button
+          {oppRemoved ? <div
+          className="group relative cursor-none overflow-hidden bg-gray-300
+              w-full rounded-2xl py-3.5
+               text-black font-semibold"
+          ><span className="relative z-10 flex items-center justify-center gap-2">Opponent Removed</span></div> : <button
             onClick={() => {
               playAgain() ;
             }}
@@ -170,11 +192,13 @@ export default function GameEnd({
             </span>
 
             <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition bg-white/10" />
-          </button>
+          </button>}
 
           {/* New Match */}
           <button
-            onClick={() => router.push("/matchmaking")}
+            onClick={() =>{
+              newMatch() ;
+            }}
             className="
               group w-full rounded-2xl py-3.5
               border border-white/10

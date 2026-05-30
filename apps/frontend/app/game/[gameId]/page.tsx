@@ -19,7 +19,7 @@ export default function ChessBoard () {
     const [chessPosition , setChessPosition] = useState(chessGame.fen()) ;
     const [orientation , setOrientation] = useState<"black" | "white">("white") ;
     const [localplayerId , setLocalPlayerId] = useState<string | null>(null) ;
-    const [gameStatus , setGameStatus] = useState<"check"|"draw"|"checkMate"|"normal">("draw") ;
+    const [gameStatus , setGameStatus] = useState<"check"|"draw"|"checkMate"|"normal">("normal") ;
     const [gameResult , setGameResult] = useState<"draw"|"lose"|"win"|undefined>(undefined);
     const [isMe , setIsMe] = useState(false);
     const [opp , setOpp] = useState<{name : string , image : string}>({
